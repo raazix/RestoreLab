@@ -776,7 +776,7 @@ elif menu == "Incident Explorer":
             if settings.supermemory_enabled:
                 st.markdown("---")
                 st.markdown("##### 🌐 Supermemory Integration (Cloud Incident Memory)")
-                with st.expander("Review Sanitized Telemetry Payload (Privacy Audit)"):
+                if st.checkbox("🔍 Review Sanitized Telemetry Payload (Privacy Audit)", key=f"preview_chk_{inc.incident_id}"):
                     st.caption("Inspect the exact payload that will be transmitted. All passwords and paths are scrubbed.")
                     sanitized_payload = supermemory.preview_sanitized_payload(inc)
                     st.json(sanitized_payload)

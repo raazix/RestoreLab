@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE)
 [![Engine: Restic](https://img.shields.io/badge/engine-Restic%200.19.1-cyan.svg)](https://restic.net/)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6.svg)](https://microsoft.com)
-[![Tests: 39 Passed](https://img.shields.io/badge/tests-39%20passed-success.svg)](tests/)
+[![Tests: 47 Passed](https://img.shields.io/badge/tests-47%20passed-success.svg)](tests/)
 
 > **Evidence before conclusions. Recovery over appearance. Safety by default.**
 
@@ -16,6 +16,7 @@ Unlike traditional backup utilities that stop at reporting exit codes, RestoreLa
 
 ## 🌟 Key Capabilities
 
+- **Linear-Inspired Developer Interface:** Minimalist dark-first workbench built with React, TypeScript, Tailwind CSS, and Framer Motion, featuring a command palette (`Ctrl+K`), compact collapsible sidebar, and micro-animations.
 - **Real Local Restic Engine:** Hardened wrapper executing genuine backups, snapshot listings, index checks, and isolated restores without shell injection risks.
 - **Cryptographic File-Level Verification:** Pre-backup and post-restore SHA-256 manifests comparing byte counts, relative POSIX paths, and cryptographic digests to catch silent data corruption.
 - **Strict Destination Safety Guards:** Rejects in-place overwrites of source directories, repository roots, or system volumes before subprocess dispatch.
@@ -49,8 +50,18 @@ The setup script will automatically:
 5. Initialize the local encrypted Restic lab repository.
 
 ### 3. Launch the Workbench
+
+**Linear-Inspired Modern React Workbench (Recommended):**
+```powershell
+.\scripts\run_app_linear.ps1
+# Or manually: python -m uvicorn src.restorelab.api.main:app --port 8000
+```
+Open your browser to: **`http://localhost:8000`**
+
+**Streamlit Classic Workbench:**
 ```powershell
 .\scripts\run_app.ps1
+# Or manually: python -m streamlit run app.py
 ```
 Open your browser to: **`http://localhost:8501`**
 
