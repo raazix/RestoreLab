@@ -56,35 +56,61 @@ The setup script will automatically:
 
 ### 3. Launch the Workbench
 
-**Linear-Inspired Modern React Workbench (Recommended):**
+RestoreLab offers two synchronized interfaces backed by the same local SQLite database and Restic engine:
+
+#### ⚡ Modern Linear-Inspired React Workbench (Recommended)
+Built with React 18, TypeScript, Tailwind CSS, and Framer Motion with full keyboard navigation (`Ctrl+K` command palette):
+
 ```powershell
+# Using the helper script:
 .\scripts\run_app_linear.ps1
-# Or manually: python -m uvicorn src.restorelab.api.main:app --port 8000
+
+# Or running the FastAPI backend directly from your terminal:
+python -m uvicorn src.restorelab.api.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 Open your browser to: **`http://localhost:8000`**
 
-**Streamlit Classic Workbench:**
+#### 🐍 Classic Streamlit Workbench
+The standalone Python Streamlit dashboard:
+
 ```powershell
+# Using the helper script:
 .\scripts\run_app.ps1
-# Or manually: python -m streamlit run app.py
+
+# Or running Streamlit directly from your terminal:
+python -m streamlit run app.py --server.port 8501
 ```
 Open your browser to: **`http://localhost:8501`**
+
+#### 🧪 Run the Complete Automated Test Suite (64 Tests)
+```powershell
+python -m pytest tests/ -v
+```
+
+#### 📦 Rebuilding the React Frontend (Optional, for developers)
+```powershell
+cd frontend
+npm install
+npm run build
+cd ..
+```
 
 ---
 
 ## 🧭 Workbench Navigation & Workflows
 
-RestoreLab features 8 specialized workbench views:
+RestoreLab features 9 specialized workbench views and workflows:
 
-| Page | Description | Core Capabilities |
+| Page / View | Description | Core Capabilities |
 | :--- | :--- | :--- |
-| **📊 Overview** | High-level reliability dashboard | System status, recent backup runs, verified restore ratio, repository health, open incidents. |
-| **💾 Backup Lab** | Backup execution and repository management | Initialize repository, generate test datasets, pre-scan SHA-256 manifests, execute backups, run fast or deep integrity checks (`--read-data`). |
-| **🔍 Recovery Verification** | Snapshot restore & cryptographic diff | Browse snapshots, perform isolated sandbox restores, compare pre/post manifests, detect silent corruption. |
-| **🚨 Incident Explorer** | Triage and post-mortem workbench | Investigate failures, view observable evidence and diagnostic findings, record verified remediations, update lifecycle status. |
+| **📊 Overview** | High-level reliability dashboard | System status, recent backup runs, verified restore ratio, repository health, open incidents, and the **0–100 Disaster Recovery Readiness Scorecard** with signed HTML audit certificate download. |
+| **💾 Backup Lab** | Backup execution and repository management | Initialize repository, generate test datasets, pre-scan SHA-256 manifests, execute backups, run fast index checks (`restic check`) or deep integrity checks (`--read-data`). |
+| **🔍 Recovery Verification** | Snapshot restore & cryptographic diff | Browse snapshots, perform isolated sandbox restores (`data/lab_restore/`), compare pre/post manifests, detect silent corruption. Includes 3 dedicated sub-tabs: <br/>• **Sandbox Verification**: Snapshot-level verification against live source or manifests.<br/>• **Recovery Drills & RTO**: Automated scheduled/manual drills, RTO SLA tracking, auto-sanitizing fixtures.<br/>• **Snapshot Drift Analysis**: File churn diffing, volumetric swing metrics, and explainable anomaly flags. |
+| **🎯 Recovery Drills & Readiness** | Dedicated DR compliance view (Streamlit) | Automated drill execution, RTO SLA monitoring, drill history, multi-factor readiness assessment, and one-click HTML audit report downloads. |
+| **🚨 Incident Explorer** | Triage and post-mortem workbench | Investigate failures, view observable evidence and diagnostic findings, record verified remediations, and inspect **Evidence-Based Root-Cause Investigation** cards distinguishing confirmed observations, likely causes, and unknowns. |
 | **📚 Knowledge Base** | Case-based reasoning search | Search troubleshooting articles and past post-mortems using SQLite FTS5 with explainable match reasons. |
-| **🧪 Experiments** | Controlled failure injection | Execute 8 failure scenarios against disposable fixtures with automatic sandbox cleanup. |
-| **📋 Reports** | Audit report generator | View and download Markdown post-mortems and cryptographic recovery audit reports with SHA-256 fingerprints. |
+| **🧪 Experiments** | Controlled failure injection | Execute 8 failure scenarios against disposable fixtures (`data/lab_experiments/`) with automatic sandbox cleanup. |
+| **📋 Reports** | Audit report generator | View and download Markdown post-mortems, JSON audit records, and standalone responsive HTML certificates with SHA-256 cryptographic fingerprints. |
 | **⚙️ Settings** | Configuration & safety governance | Inspect active paths, safety limits, binary paths, and preview Supermemory client-side privacy sanitization. |
 
 ---
@@ -138,7 +164,7 @@ graph TD
     end
 
     subgraph API ["API & Routing Layer"]
-        FastAPI["FastAPI REST Backend (src/restorelab/api)<br/>18 Typed Endpoints & Static Serving"]
+        FastAPI["FastAPI REST Backend (src/restorelab/api)<br/>26 Typed Endpoints & Static SPA Serving"]
     end
 
     subgraph Core ["RestoreLab Core Reliability Engine (Python 3.11+)"]
@@ -146,7 +172,11 @@ graph TD
         ResticEngine["Restic CLI Subprocess Wrapper (src/restorelab/backup/restic.py)"]
         ManifestEngine["SHA-256 Manifest & Diff Engine (src/restorelab/verification/manifest.py)"]
         RestoreOrch["Isolated Restore Orchestrator (src/restorelab/verification/restore.py)"]
+        DrillsEngine["Automated Recovery Drills & RTO (src/restorelab/verification/drills.py)"]
+        DriftEngine["Snapshot Drift & Volumetric Anomalies (src/restorelab/verification/drift.py)"]
         DiagEngine["Deterministic Diagnostic Engine (11 Rules) (src/restorelab/diagnostics/engine.py)"]
+        InvestEngine["Evidence-Based Investigation (src/restorelab/diagnostics/investigation.py)"]
+        HTMLExporter["Signed HTML/JSON Audit Engine (src/restorelab/reporting/html_export.py)"]
         ExpRunner["Disposable Scratchpad Experiment Runner (src/restorelab/experiments/runner.py)"]
         Repo["SQLite Persistence & FTS5 CBR Search (src/restorelab/incidents/repository.py)"]
         Supermemory["Supermemory v5 Adapter (src/restorelab/knowledge/supermemory_adapter.py)"]
@@ -172,6 +202,11 @@ graph TD
     RestoreOrch --> ManifestEngine
     RestoreOrch --> ResticEngine
     RestoreOrch --> DiagEngine
+    DrillsEngine --> RestoreOrch
+    DrillsEngine --> Repo
+    DriftEngine --> ManifestEngine
+    InvestEngine --> Repo
+    HTMLExporter --> Repo
     ExpRunner --> Scratchpad
     ExpRunner --> DiagEngine
 
@@ -185,12 +220,12 @@ graph TD
 
 ```
 RestoreLab/
-├── app.py                         # Classic Streamlit Reliability Workbench
+├── app.py                         # Classic Streamlit Reliability Workbench (with Recovery Drills & Readiness)
 ├── frontend/                      # Linear-Inspired React 18 + TypeScript + Tailwind Application
 │   ├── src/
 │   │   ├── components/            # CommandPalette (Ctrl+K), Sidebar, Header, UI Primitives
-│   │   ├── views/                 # 8 Linear Views (Overview, BackupLab, Recovery, Incidents, etc.)
-│   │   ├── lib/                   # Typed API Client and Utility Helpers
+│   │   ├── views/                 # 8 Linear Views (Overview, BackupLab, RecoveryVerification, etc.)
+│   │   ├── lib/                   # Typed API Client and Utility Helpers (Drills, Drift, Readiness, Reports)
 │   │   └── App.tsx                # Master Linear Layout & Motion View Routing
 │   ├── index.html
 │   ├── package.json
@@ -202,20 +237,23 @@ RestoreLab/
 │       ├── config.py              # Validated settings, path containment, credential sanitization
 │       ├── api/
 │       │   ├── __init__.py
-│       │   └── main.py            # FastAPI REST backend exposing 18 endpoints & static SPA serving
+│       │   └── main.py            # FastAPI REST backend exposing 26 endpoints & static SPA serving
 │       ├── backup/
 │       │   ├── base.py            # BackupEngine contract & result models
 │       │   └── restic.py          # Safe Restic CLI subprocess wrapper
 │       ├── verification/
 │       │   ├── manifest.py        # Deterministic SHA-256 manifest engine & diffing
 │       │   ├── restore.py         # Isolated restore orchestrator & verification
+│       │   ├── drills.py          # Automated recovery drill runner & RTO compliance
+│       │   ├── drift.py           # Snapshot drift analyzer & volumetric anomaly detection
 │       │   └── sample_data.py     # Realistic test dataset generator
 │       ├── diagnostics/
 │       │   ├── engine.py          # Deterministic diagnostic evaluation engine
-│       │   └── rules.py           # 11 versioned diagnostic rules
+│       │   ├── rules.py           # 11 versioned diagnostic rules
+│       │   └── investigation.py   # Evidence-based root-cause investigation engine
 │       ├── incidents/
-│       │   ├── models.py          # Data models for incidents, runs, audits, and KB
-│       │   └── repository.py      # SQLite ACID persistence & FTS5 search
+│       │   ├── models.py          # Data models (incidents, drills, drift, readiness, KB)
+│       │   └── repository.py      # SQLite ACID persistence, drills tracking & FTS5 search
 │       ├── knowledge/
 │       │   ├── provider.py        # MemoryProvider interface & SearchResult
 │       │   ├── sqlite_search.py   # Local offline FTS5 case-based retrieval
@@ -224,11 +262,18 @@ RestoreLab/
 │       │   ├── scenarios.py       # 8 failure scenario specifications
 │       │   └── runner.py          # Safe disposable experiment execution runner
 │       └── reporting/
-│           └── exports.py         # Markdown/JSON post-mortems with SHA-256 fingerprints
+│           ├── __init__.py
+│           ├── exports.py         # Markdown/JSON post-mortems with SHA-256 fingerprints
+│           └── html_export.py     # Standalone signed HTML/JSON certificate exports
 ├── tests/
 │   ├── conftest.py                # Isolated test fixtures
-│   ├── unit/                      # 44 fast unit tests (manifests, rules, mocks, API)
-│   │   └── test_api.py            # REST API endpoints & static serving tests
+│   ├── unit/                      # 61 fast unit tests (manifests, rules, mocks, API, drills, drift)
+│   │   ├── test_api.py            # REST API endpoints & static serving tests
+│   │   ├── test_drills.py         # Automated recovery drills & RTO compliance tests
+│   │   ├── test_drift.py          # Snapshot drift & volumetric anomaly detection tests
+│   │   ├── test_investigation.py  # Evidence-based root cause investigation tests
+│   │   ├── test_html_export.py    # Signed HTML & JSON certificate export tests
+│   │   └── test_readiness.py      # Disaster recovery readiness scoring algorithm tests
 │   └── integration/               # End-to-end Restic & live Supermemory tests
 ├── scripts/
 │   ├── download_restic.ps1        # Restic binary downloader
@@ -275,10 +320,10 @@ RestoreLab integrates with the official **Supermemory API v5** (`supermemory>=5.
 
 ## 🧪 Automated Testing Suite
 
-RestoreLab includes 47 unit and integration tests using `pytest`:
+RestoreLab includes 64 unit and integration tests using `pytest`:
 
 ```powershell
-# Run the complete test suite (all 47 tests)
+# Run the complete test suite (all 64 tests)
 python -m pytest tests/ -v
 
 # Run fast offline unit tests with mocked API (no keys or network required)
@@ -288,15 +333,19 @@ python -m pytest tests/unit/ -v
 python -m pytest tests/integration/test_supermemory_live.py -v
 ```
 
-All 47 tests pass cleanly:
-- **REST API & Static Serving (8 tests):** Verified status, dashboard metrics, settings masking, experiment scenarios, incident listing, FTS5 queries, and static React HTML serving.
-- **Offline Supermemory Mocks (7 tests):** Verified config loading, client-side regex path/secret redaction, mocked connection check, mocked document ingestion, mocked hybrid retrieval, offline fallback, and API key redaction in error messages.
-- **Live Integration Tests (2 tests):** Verified live connection to `https://api.supermemory.ai` and live ingestion/search roundtrip against namespace `restorelab-incidents`.
-- **Deterministic Manifest Engine (5 tests):** Size limits, Unicode paths, and byte-for-byte SHA-256 verification.
-- **Diagnostic Engine & Failure Scenarios (13 tests):** 11 deterministic rules and 8 failure scenarios including silent bit rot, missing repo, and timeouts.
-- **ACID Persistence & SQLite Search (4 tests):** Backup runs, restore audits, incident records, and FTS5 full-text queries.
-- **Hardened Subprocess Wrapper (3 tests):** Missing binary safety (127), safe restore target verification, and environment credential containment.
-- **End-to-End Restic Cycle (1 test):** Genuine Restic backup, snapshot discovery, restore, and 100% cryptographic verification.
+All 64 tests pass cleanly:
+- **REST API & Static Serving (10 tests in `test_api.py`):** Verified status, dashboard metrics, settings masking, experiment scenarios, incident listing, FTS5 queries, drill endpoints, drift diffing, readiness assessments, and static React HTML serving.
+- **Automated Recovery Drills & RTO SLA (2 tests in `test_drills.py`):** Verified single snapshot recovery drill, duration tracking, RTO SLA compliance, and batch drill execution across historical snapshots.
+- **Snapshot Drift & Anomaly Flags (4 tests in `test_drift.py`):** Verified clean baseline comparisons, file additions/modifications/deletions diffing, volumetric swing ratio metrics, and explainable anomaly flags (`ANOMALY_MASS_DELETION`, `ANOMALY_VOLUMETRIC_SPIKE`, `ANOMALY_SUSPICIOUS_EXTENSION`).
+- **Evidence-Based Root Cause Investigation (2 tests in `test_investigation.py`):** Verified categorization into confirmed observations, likely causes, unknowns, safe recommended next steps, and safety invariants.
+- **Signed HTML/JSON Audit Certificates (4 tests in `test_html_export.py`):** Verified standalone dark/light responsive HTML rendering, JSON exports, SHA-256 cryptographic document signing, and audit payload verification.
+- **Disaster Recovery Readiness Scoring (3 tests in `test_readiness.py`):** Verified multi-factor readiness scoring (0–100), tier categorizations (Optimum, Resilient, Degraded, Critical), RTO compliance weighting, snapshot coverage, and documented metric limitations.
+- **Offline Supermemory Mocks (7 tests in `test_supermemory.py`):** Verified config loading, client-side regex path/secret redaction, mocked connection check, mocked document ingestion, mocked hybrid retrieval, offline fallback, and API key redaction in error messages.
+- **Live Integration Tests (2 tests in `test_supermemory_live.py`):** Verified live connection to `https://api.supermemory.ai` and live ingestion/search roundtrip against namespace `restorelab-incidents`.
+- **Deterministic Manifest Engine (5 tests in `test_manifest.py`):** Size limits, Unicode paths, and byte-for-byte SHA-256 verification.
+- **Diagnostic Engine & Failure Scenarios (13 tests in `test_diagnostics.py`, `test_experiments.py`):** 11 deterministic rules and 8 failure scenarios including silent bit rot, missing repo, and timeouts.
+- **ACID Persistence & SQLite Search (4 tests in `test_repository.py`):** Backup runs, restore audits, incident records, and FTS5 full-text queries.
+- **Hardened Subprocess Wrapper & End-to-End Cycle (4 tests in `test_restic_wrapper.py`, `test_backup_restore_e2e.py`):** Missing binary safety (127), safe restore target verification, environment credential containment, and genuine Restic backup/restore cycle with 100% cryptographic verification.
 
 ---
 
