@@ -11,7 +11,12 @@ RestoreLab separates operational concerns into distinct, loosely-coupled modules
 ```
 +--------------------------------------------------------------------------------+
 |                             Presentation Tier                                  |
-|            Streamlit Reliability Workbench (8 Specialized Pages)               |
+|         Modern Linear React Workbench (React 18 + TS + Tailwind + Motion)      |
++--------------------------------------------------------------------------------+
+                                       |
++--------------------------------------------------------------------------------+
+|                             API & Routing Tier                                 |
+|         FastAPI REST Backend (26 Typed Endpoints & Static SPA Serving)         |
 +--------------------------------------------------------------------------------+
                                        |
 +--------------------------------------------------------------------------------+

@@ -56,31 +56,16 @@ The setup script will automatically:
 
 ### 3. Launch the Workbench
 
-RestoreLab offers two synchronized interfaces backed by the same local SQLite database and Restic engine:
-
-#### ⚡ Modern Linear-Inspired React Workbench (Recommended)
-Built with React 18, TypeScript, Tailwind CSS, and Framer Motion with full keyboard navigation (`Ctrl+K` command palette):
+Launch the modern Linear-inspired React workbench (backed by the FastAPI REST backend and encrypted Restic engine):
 
 ```powershell
-# Using the helper script:
-.\scripts\run_app_linear.ps1
+# Using the PowerShell launcher:
+.\scripts\run_app.ps1
 
-# Or running the FastAPI backend directly from your terminal:
+# Or running the backend directly from your terminal:
 python -m uvicorn src.restorelab.api.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 Open your browser to: **`http://localhost:8000`**
-
-#### 🐍 Classic Streamlit Workbench
-The standalone Python Streamlit dashboard:
-
-```powershell
-# Using the helper script:
-.\scripts\run_app.ps1
-
-# Or running Streamlit directly from your terminal:
-python -m streamlit run app.py --server.port 8501
-```
-Open your browser to: **`http://localhost:8501`**
 
 #### 🧪 Run the Complete Automated Test Suite (64 Tests)
 ```powershell
@@ -99,14 +84,13 @@ cd ..
 
 ## 🧭 Workbench Navigation & Workflows
 
-RestoreLab features 9 specialized workbench views and workflows:
+RestoreLab features 8 specialized workbench views and workflows:
 
 | Page / View | Description | Core Capabilities |
 | :--- | :--- | :--- |
 | **📊 Overview** | High-level reliability dashboard | System status, recent backup runs, verified restore ratio, repository health, open incidents, and the **0–100 Disaster Recovery Readiness Scorecard** with signed HTML audit certificate download. |
 | **💾 Backup Lab** | Backup execution and repository management | Initialize repository, generate test datasets, pre-scan SHA-256 manifests, execute backups, run fast index checks (`restic check`) or deep integrity checks (`--read-data`). |
 | **🔍 Recovery Verification** | Snapshot restore & cryptographic diff | Browse snapshots, perform isolated sandbox restores (`data/lab_restore/`), compare pre/post manifests, detect silent corruption. Includes 3 dedicated sub-tabs: <br/>• **Sandbox Verification**: Snapshot-level verification against live source or manifests.<br/>• **Recovery Drills & RTO**: Automated scheduled/manual drills, RTO SLA tracking, auto-sanitizing fixtures.<br/>• **Snapshot Drift Analysis**: File churn diffing, volumetric swing metrics, and explainable anomaly flags. |
-| **🎯 Recovery Drills & Readiness** | Dedicated DR compliance view (Streamlit) | Automated drill execution, RTO SLA monitoring, drill history, multi-factor readiness assessment, and one-click HTML audit report downloads. |
 | **🚨 Incident Explorer** | Triage and post-mortem workbench | Investigate failures, view observable evidence and diagnostic findings, record verified remediations, and inspect **Evidence-Based Root-Cause Investigation** cards distinguishing confirmed observations, likely causes, and unknowns. |
 | **📚 Knowledge Base** | Case-based reasoning search | Search troubleshooting articles and past post-mortems using SQLite FTS5 with explainable match reasons. |
 | **🧪 Experiments** | Controlled failure injection | Execute 8 failure scenarios against disposable fixtures (`data/lab_experiments/`) with automatic sandbox cleanup. |
@@ -158,9 +142,8 @@ Follow this 5-minute walkthrough to demonstrate end-to-end reliability engineeri
 
 ```mermaid
 graph TD
-    subgraph UI ["User Interfaces"]
-        LinearUI["Linear React Workbench (React + TS + Tailwind + Motion)<br/>http://localhost:8000"]
-        StreamlitUI["Classic Streamlit Workbench (Python)<br/>http://localhost:8501"]
+    subgraph UI ["User Interface"]
+        LinearUI["Linear React Workbench (React 18 + TS + Tailwind + Motion)<br/>http://localhost:8000"]
     end
 
     subgraph API ["API & Routing Layer"]
@@ -192,7 +175,6 @@ graph TD
     end
 
     LinearUI -->|HTTP / JSON Requests| FastAPI
-    StreamlitUI -->|Direct Method Invocations| Core
     FastAPI --> Core
 
     ResticEngine -->|AES-256-CTR / HMAC-SHA256| ResticRepo
@@ -220,7 +202,6 @@ graph TD
 
 ```
 RestoreLab/
-├── app.py                         # Classic Streamlit Reliability Workbench (with Recovery Drills & Readiness)
 ├── frontend/                      # Linear-Inspired React 18 + TypeScript + Tailwind Application
 │   ├── src/
 │   │   ├── components/            # CommandPalette (Ctrl+K), Sidebar, Header, UI Primitives
@@ -278,8 +259,8 @@ RestoreLab/
 ├── scripts/
 │   ├── download_restic.ps1        # Restic binary downloader
 │   ├── setup_lab.ps1              # Full environment setup
-│   ├── run_app.ps1                # Streamlit launcher (port 8501)
-│   ├── run_app_linear.ps1         # Linear React launcher (port 8000)
+│   ├── run_app.ps1                # Main workbench launcher (port 8000)
+│   ├── run_app_linear.ps1         # Alias launcher (port 8000)
 │   ├── run_tests.ps1              # Automated test runner
 │   └── generate_sample_data.py    # CLI sample data generator
 ├── docs/

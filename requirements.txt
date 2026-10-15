@@ -1,6 +1,5 @@
 # RestoreLab - Backup Integrity & Recovery Verification Tool
 # Core Dependencies
-streamlit>=1.35.0
 pydantic>=2.7.0
 python-dotenv>=1.0.1
 psutil>=5.9.0
