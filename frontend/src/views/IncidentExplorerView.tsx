@@ -17,7 +17,8 @@ import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/Ca
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Tabs } from '@/components/ui/Tabs'
-import { api, Incident, SystemStatus } from '@/lib/api'
+import { api, Incident, InvestigationReport, SystemStatus } from '@/lib/api'
+import { Microscope, ShieldCheck as ShieldCheckIcon } from 'lucide-react'
 
 interface IncidentExplorerViewProps {
   systemStatus: SystemStatus | null
@@ -33,6 +34,10 @@ export const IncidentExplorerView: React.FC<IncidentExplorerViewProps> = ({
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [loading, setLoading] = useState(false)
 
+  // Investigation state
+  const [investigation, setInvestigation] = useState<InvestigationReport | null>(null)
+  const [loadingInvestigation, setLoadingInvestigation] = useState(false)
+
   // Edit states
   const [editStatus, setEditStatus] = useState<string>('open')
   const [editResolution, setEditResolution] = useState<string>('')
@@ -44,6 +49,7 @@ export const IncidentExplorerView: React.FC<IncidentExplorerViewProps> = ({
   const [consentGiven, setConsentGiven] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState<string | null>(null)
+
 
   const fetchIncidents = async () => {
     setLoading(true)
@@ -76,8 +82,15 @@ export const IncidentExplorerView: React.FC<IncidentExplorerViewProps> = ({
       setShowPreview(false)
       setConsentGiven(false)
       setSyncResult(null)
+
+      setLoadingInvestigation(true)
+      api.getIncidentInvestigation(selectedIncident.incident_id)
+        .then((inv) => setInvestigation(inv))
+        .catch((err) => console.error('Failed to load investigation', err))
+        .finally(() => setLoadingInvestigation(false))
     }
   }, [selectedIncidentId])
+
 
   const handleSaveUpdates = async () => {
     if (!selectedIncidentId) return
@@ -292,8 +305,92 @@ export const IncidentExplorerView: React.FC<IncidentExplorerViewProps> = ({
                 </div>
               )}
 
+              {/* Evidence-Based Root-Cause Investigation */}
+              {investigation && (
+                <div className="space-y-3 pt-3 border-t border-border-subtle">
+                  <div className="flex items-center gap-2">
+                    <Microscope className="w-4 h-4 text-indigo-400" />
+                    <h4 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+                      Evidence-Based Root-Cause Investigation
+                    </h4>
+                  </div>
+
+                  {/* Confirmed Observations */}
+                  {investigation.confirmed_observations.length > 0 && (
+                    <div className="p-3 rounded-lg bg-surface-2 border border-border-subtle space-y-1.5 text-xs">
+                      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-400 font-mono uppercase">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Confirmed Observations (Hard Evidence)</span>
+                      </div>
+                      <ul className="space-y-1 text-zinc-300 font-mono text-[11px] pl-4 list-disc">
+                        {investigation.confirmed_observations.map((obs, i) => (
+                          <li key={i}>{obs}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Likely Causes vs Unknowns */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    {investigation.likely_causes.length > 0 && (
+                      <div className="p-3 rounded-lg bg-surface-2 border border-border-subtle space-y-1">
+                        <div className="text-[10px] text-zinc-400 font-semibold uppercase font-mono">
+                          Likely Causes
+                        </div>
+                        <ul className="space-y-1 text-zinc-200 text-[11px]">
+                          {investigation.likely_causes.map((cause, i) => (
+                            <li key={i} className="text-amber-300 font-mono">
+                              • {cause}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {investigation.unknowns.length > 0 && (
+                      <div className="p-3 rounded-lg bg-surface-2 border border-border-subtle space-y-1">
+                        <div className="text-[10px] text-zinc-400 font-semibold uppercase font-mono">
+                          Unknowns & Uncertainties
+                        </div>
+                        <ul className="space-y-1 text-zinc-400 text-[11px]">
+                          {investigation.unknowns.map((unk, i) => (
+                            <li key={i} className="font-mono">
+                              ? {unk}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Recommended Next Checks */}
+                  {investigation.recommended_next_checks.length > 0 && (
+                    <div className="p-3 rounded-lg bg-surface-2 border border-border-subtle space-y-1 text-xs">
+                      <span className="text-[10px] text-cyan-400 font-semibold uppercase font-mono block">
+                        Recommended Next Diagnostic Checks (Non-Destructive)
+                      </span>
+                      <ul className="space-y-1 text-zinc-300 font-mono text-[11px] pl-4 list-disc">
+                        {investigation.recommended_next_checks.map((chk, i) => (
+                          <li key={i}>{chk}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Safety Invariants */}
+                  <div className="p-2.5 rounded-lg bg-surface-3/50 border border-border-subtle flex items-center justify-between text-[11px] font-mono text-zinc-400">
+                    <span className="flex items-center gap-1.5">
+                      <ShieldCheckIcon className="w-3.5 h-3.5 text-emerald-400" />
+                      Automatic repairs bounded: No destructive prunes executed
+                    </span>
+                    <Badge variant="emerald" dot>Safe Isolation</Badge>
+                  </div>
+                </div>
+              )}
+
               {/* Verified Resolution & Status Updates */}
               <div className="space-y-3 pt-2 border-t border-border-subtle">
+
                 <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
                   Lifecycle Status & Verification Workflow
                 </h4>

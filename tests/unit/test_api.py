@@ -78,10 +78,15 @@ def test_api_knowledge_search_query(client):
 
 
 def test_api_serves_frontend_html(client):
+    from pathlib import Path
+    dist_index = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist" / "index.html"
+    if not dist_index.exists():
+        pytest.skip("Frontend dist build not found")
     response = client.get("/")
     assert response.status_code == 200
     assert "RestoreLab" in response.text
     assert "<div id=\"root\"></div>" in response.text
+
 
 
 def test_api_generate_sample_data(client):
@@ -91,5 +96,28 @@ def test_api_generate_sample_data(client):
     assert data["success"] is True
     assert data["file_count"] > 0
     assert data["total_bytes"] > 0
+
+
+def test_api_recovery_drills_and_readiness(client):
+    # Test readiness
+    r_resp = client.get("/api/readiness")
+    assert r_resp.status_code == 200
+    r_data = r_resp.json()
+    assert "score" in r_data
+    assert "readiness_tier" in r_data
+    assert "coverage_ratio" in r_data
+    assert "metric_limitations" in r_data
+
+    # Test drills list
+    dr_resp = client.get("/api/drills")
+    assert dr_resp.status_code == 200
+    assert isinstance(dr_resp.json(), list)
+
+    # Test HTML readiness download
+    html_resp = client.get("/api/reports/download/readiness.html")
+    assert html_resp.status_code == 200
+    assert "<!DOCTYPE html>" in html_resp.text
+    assert "Disaster Recovery Readiness Audit" in html_resp.text
+
 
 

@@ -13,7 +13,8 @@ import {
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { DashboardMetrics, SystemStatus } from '@/lib/api'
+import { DashboardMetrics, ReadinessAssessment, SystemStatus, api } from '@/lib/api'
+import { Download, Sparkles, Activity } from 'lucide-react'
 
 interface OverviewViewProps {
   metrics: DashboardMetrics | null
@@ -28,6 +29,22 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   onNavigate,
   onRefresh,
 }) => {
+  const [readiness, setReadiness] = React.useState<ReadinessAssessment | null>(null)
+  const [showLimitations, setShowLimitations] = React.useState(false)
+
+  const fetchReadiness = async () => {
+    try {
+      const data = await api.getReadiness()
+      setReadiness(data)
+    } catch (err) {
+      console.error('Failed to load readiness', err)
+    }
+  }
+
+  React.useEffect(() => {
+    fetchReadiness()
+  }, [])
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
       {/* Top Banner: Reliability Ground Truth */}
@@ -152,8 +169,114 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
         </Card>
       </div>
 
+      {/* Disaster Recovery Readiness Analytics Panel */}
+      {readiness && (
+        <Card className="border-indigo-500/30 bg-gradient-to-r from-surface-1 via-surface-2 to-surface-1">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+            {/* Score & Tier */}
+            <div className="flex items-center gap-4">
+              <div className="relative flex items-center justify-center w-20 h-20 rounded-2xl bg-surface-3 border border-indigo-500/40 shadow-subtle">
+                <div className="text-center">
+                  <div className="text-2xl font-bold font-mono text-zinc-100">
+                    {readiness.score}
+                  </div>
+                  <div className="text-[10px] text-zinc-400 font-mono -mt-0.5">/ 100</div>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-zinc-100">
+                    Disaster Recovery Readiness Score
+                  </span>
+                  <Badge
+                    variant={
+                      readiness.readiness_tier === 'OPTIMAL'
+                        ? 'emerald'
+                        : readiness.readiness_tier === 'ACCEPTABLE'
+                        ? 'cyan'
+                        : readiness.readiness_tier === 'DEGRADED'
+                        ? 'amber'
+                        : 'rose'
+                    }
+                    dot
+                  >
+                    Tier: {readiness.readiness_tier}
+                  </Badge>
+                </div>
+                <p className="text-xs text-zinc-400 max-w-xl">
+                  Multi-factor composite readiness derived from recovery drill verification pass rates, RTO SLA compliance, and snapshot age.
+                </p>
+              </div>
+            </div>
+
+            {/* Sub-Metrics & Actions */}
+            <div className="flex flex-wrap items-center gap-4 text-xs font-mono">
+              <div className="p-2.5 rounded-lg bg-surface-3/80 border border-border-subtle">
+                <div className="text-[10px] text-zinc-500 uppercase">Snapshot Coverage</div>
+                <div className="text-sm font-bold text-zinc-200 mt-0.5">
+                  {readiness.coverage_ratio}% ({readiness.tested_snapshots_count}/{readiness.total_eligible_snapshots})
+                </div>
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-surface-3/80 border border-border-subtle">
+                <div className="text-[10px] text-zinc-500 uppercase">RTO SLA Compliance</div>
+                <div className="text-sm font-bold text-emerald-400 mt-0.5">
+                  {readiness.rto_compliance_rate}%
+                </div>
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-surface-3/80 border border-border-subtle">
+                <div className="text-[10px] text-zinc-500 uppercase">Avg Restore Duration</div>
+                <div className="text-sm font-bold text-zinc-200 mt-0.5">
+                  {readiness.average_restore_seconds.toFixed(2)}s
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={() => onNavigate('recovery')}
+                  leftIcon={<Activity className="w-3.5 h-3.5" />}
+                >
+                  Run Recovery Drill
+                </Button>
+                <a
+                  href="/api/reports/download/readiness.html"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center justify-center gap-1 text-[11px] text-indigo-400 hover:text-indigo-300 font-sans"
+                >
+                  <Download className="w-3 h-3" />
+                  Download Signed HTML Audit
+                </a>
+              </div>
+            </div>
+          </div>
+
+          {/* Transparent Metric Limitations Toggle */}
+          <div className="mt-4 pt-3 border-t border-border-subtle flex flex-col gap-1.5">
+            <button
+              onClick={() => setShowLimitations(!showLimitations)}
+              className="text-[11px] text-zinc-500 hover:text-zinc-300 flex items-center gap-1 font-mono text-left"
+            >
+              <span>{showLimitations ? '▼ Hide' : '▶ Show'} Documented Metric Limitations & Assumptions</span>
+            </button>
+            {showLimitations && (
+              <ul className="text-[11px] text-zinc-400 font-mono space-y-1 list-disc pl-5 mt-1 bg-surface-3/50 p-2.5 rounded border border-border-subtle">
+                {readiness.metric_limitations.map((lim, i) => (
+                  <li key={i}>{lim}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </Card>
+      )}
+
       {/* Main Grid: Recent Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
         {/* Recent Backups */}
         <Card>
           <CardHeader>

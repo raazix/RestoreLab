@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE)
 [![Engine: Restic](https://img.shields.io/badge/engine-Restic%200.19.1-cyan.svg)](https://restic.net/)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6.svg)](https://microsoft.com)
-[![Tests: 47 Passed](https://img.shields.io/badge/tests-47%20passed-success.svg)](tests/)
+[![Tests: 64 Passed](https://img.shields.io/badge/tests-64%20passed-success.svg)](tests/)
 
 > **Evidence before conclusions. Recovery over appearance. Safety by default.**
 
@@ -17,14 +17,19 @@ Unlike traditional backup utilities that stop at reporting exit codes, RestoreLa
 ## 🌟 Key Capabilities
 
 - **Linear-Inspired Developer Interface:** Minimalist dark-first workbench built with React, TypeScript, Tailwind CSS, and Framer Motion, featuring a command palette (`Ctrl+K`), compact collapsible sidebar, and micro-animations.
+- **Automated Disaster Recovery Drills:** Execute single or batch recovery tests into isolated sandboxes, track RTO compliance against configurable targets, and safely recycle fixtures.
+- **Snapshot Integrity & Volumetric Drift Analysis:** Compare snapshot manifests over time to detect file churn, volumetric swings, and explainable anomaly flags without false claims of malware certainty.
+- **Objective DR Readiness Scoring:** Multi-factor scoring (0-100) evaluating drill verification pass rate, snapshot coverage ratio, RTO SLA compliance, and snapshot age freshness with documented metric limitations.
+- **Evidence-Based Root-Cause Investigation:** Forensic evidence chains distinguishing confirmed observations, likely causes, and unknowns, recommending safe next checks without automatic destructive repairs.
 - **Real Local Restic Engine:** Hardened wrapper executing genuine backups, snapshot listings, index checks, and isolated restores without shell injection risks.
 - **Cryptographic File-Level Verification:** Pre-backup and post-restore SHA-256 manifests comparing byte counts, relative POSIX paths, and cryptographic digests to catch silent data corruption.
+- **Certified HTML, JSON & Markdown Reports:** Standalone responsive HTML certificates, JSON audit logs, and Markdown post-mortems cryptographically bound by SHA-256 document signatures.
 - **Strict Destination Safety Guards:** Rejects in-place overwrites of source directories, repository roots, or system volumes before subprocess dispatch.
 - **Deterministic Diagnostic Engine:** 11 versioned, auditable rules mapping observable symptoms (exit codes, stderr patterns, manifest diffs) to confirmed root causes and remediations without generative AI hallucinations.
 - **Repeatable Failure Experiments:** 8 safe, automated failure injection scenarios (missing source, uninitialized repo, wrong password, silent bit rot, safety violations, timeouts, pack corruption) run in disposable scratchpads.
 - **ACID Persistence & Full-Text Retrieval:** SQLite database tracking backup runs, restore attempts, audit manifests, incidents, and a curated troubleshooting knowledge base powered by SQLite FTS5.
-- **Hashed Audit & Post-Mortem Exports:** Generate signed Markdown post-mortems and cryptographic verification reports with SHA-256 fingerprints.
 - **Windows-First, Local-First:** Runs 100% locally on Windows 10/11 without Docker, cloud credentials, or external API dependencies. Includes an optional, privacy-sanitized Supermemory extension.
+
 
 ---
 

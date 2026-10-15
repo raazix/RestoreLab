@@ -248,8 +248,83 @@ export const api = {
   // Reports
   getIncidentReport: (id: string) => request<{ incident_id: string; title: string; sha256_fingerprint: string; markdown: string }>(`/reports/incident/${id}`),
   getRestoreReport: (attempt_id: string) => request<{ attempt_id: string; snapshot_id: string; status: string; sha256_fingerprint: string; markdown: string }>(`/reports/restore/${attempt_id}`),
+  getDrillReport: (id: string) => request<{ drill_id: string; snapshot_id: string; status: string; sha256_fingerprint: string; html: string; json: string }>(`/reports/drill/${id}`),
+  getReadinessReport: () => request<{ assessment_id: string; score: number; tier: string; sha256_fingerprint: string; html: string; json: string }>('/reports/readiness'),
+
+  // Recovery Drills & DR Readiness
+  getReadiness: () => request<ReadinessAssessment>('/readiness'),
+  getDrills: (limit = 50) => request<RecoveryDrill[]>(`/drills?limit=${limit}`),
+  runDrill: (data: { snapshot_id?: string; subfolder?: string; rto_target_seconds?: number; drill_type?: 'manual' | 'scheduled'; cleanup_after?: boolean }) =>
+    request<RecoveryDrill>('/drills/run', { method: 'POST', body: JSON.stringify(data) }),
+  compareDrift: (base_snapshot_id: string, target_snapshot_id: string) =>
+    request<SnapshotDriftReport>('/drift/compare', { method: 'POST', body: JSON.stringify({ base_snapshot_id, target_snapshot_id }) }),
+
+  // Evidence-Based Investigation
+  getIncidentInvestigation: (id: string) => request<InvestigationReport>(`/incidents/${id}/investigation`),
 
   // Settings
   getSettings: () => request<SettingsView>('/settings'),
   testSupermemory: () => request<{ success: boolean; message: string; namespace: string; api_url: string }>('/settings/test-supermemory', { method: 'POST' }),
 }
+
+export interface RecoveryDrill {
+  drill_id: string
+  created_at: string
+  snapshot_id: string
+  status: 'SUCCESS' | 'FAILED' | 'INCONCLUSIVE'
+  drill_type: 'manual' | 'scheduled'
+  restore_target_path: string
+  duration_seconds: number
+  rto_target_seconds: number
+  rto_compliant: boolean
+  matched_files: number
+  corrupted_files: number
+  missing_files: number
+  extra_files: number
+  evidence_summary: string
+  sandbox_cleaned: boolean
+}
+
+export interface ReadinessAssessment {
+  assessment_id: string
+  evaluated_at: string
+  score: number
+  readiness_tier: 'OPTIMAL' | 'ACCEPTABLE' | 'DEGRADED' | 'AT_RISK'
+  coverage_ratio: number
+  tested_snapshots_count: number
+  total_eligible_snapshots: number
+  latest_snapshot_age_hours: number | null
+  rto_compliance_rate: number
+  average_restore_seconds: number
+  unresolved_incidents_count: number
+  successful_drills_count: number
+  failed_drills_count: number
+  metric_limitations: string[]
+}
+
+export interface SnapshotDriftReport {
+  base_snapshot_id: string
+  target_snapshot_id: string
+  timestamp: string
+  added_files: string[]
+  removed_files: string[]
+  modified_files: string[]
+  unchanged_files: string[]
+  size_change_bytes: number
+  percent_size_change: number
+  total_base_files: number
+  total_target_files: number
+  anomaly_flags: string[]
+  anomaly_explanations: string[]
+}
+
+export interface InvestigationReport {
+  operation_type: string
+  confirmed_observations: string[]
+  likely_causes: string[]
+  unknowns: string[]
+  findings: DiagnosticFinding[]
+  recommended_next_checks: string[]
+  non_destructive_invariants: string[]
+}
+

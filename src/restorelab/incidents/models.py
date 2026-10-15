@@ -36,6 +36,8 @@ class IncidentRecord(BaseModel):
     raw_evidence: Dict[str, Any] = Field(default_factory=dict)
     findings: List[DiagnosticFinding] = Field(default_factory=list)
     verified_resolution: Optional[str] = None
+    is_verified_resolution: bool = False
+    hypotheses: List[str] = Field(default_factory=list)
     resolved_by: Optional[str] = None
     resolved_at: Optional[str] = None
     notes: List[str] = Field(default_factory=list)
@@ -105,6 +107,7 @@ class KnowledgeArticle(BaseModel):
     resolution_steps: str = ""
     verification_procedure: str = ""
     known_limitations: str = ""
+    is_verified_solution: bool = True
     related_incident_ids: List[str] = Field(default_factory=list)
     created_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
@@ -112,3 +115,71 @@ class KnowledgeArticle(BaseModel):
     updated_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
+
+
+class RecoveryDrillRecord(BaseModel):
+    """Audit log entry for an automated or manual recovery drill."""
+
+    drill_id: str = Field(
+        default_factory=lambda: f"DRILL-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+    )
+    created_at: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+    snapshot_id: str
+    status: Literal["SUCCESS", "FAILED", "INCONCLUSIVE"] = "SUCCESS"
+    drill_type: Literal["manual", "scheduled"] = "manual"
+    restore_target_path: str
+    duration_seconds: float = 0.0
+    rto_target_seconds: float = 60.0
+    rto_compliant: bool = True
+    matched_files: int = 0
+    corrupted_files: int = 0
+    missing_files: int = 0
+    extra_files: int = 0
+    evidence_summary: str = ""
+    sandbox_cleaned: bool = True
+
+
+class SnapshotDriftReport(BaseModel):
+    """Diff and volumetric anomaly report between two snapshots or baseline."""
+
+    base_snapshot_id: str
+    target_snapshot_id: str
+    timestamp: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+    added_files: List[str] = Field(default_factory=list)
+    removed_files: List[str] = Field(default_factory=list)
+    modified_files: List[str] = Field(default_factory=list)
+    unchanged_files: List[str] = Field(default_factory=list)
+    size_change_bytes: int = 0
+    percent_size_change: float = 0.0
+    total_base_files: int = 0
+    total_target_files: int = 0
+    anomaly_flags: List[str] = Field(default_factory=list)
+    anomaly_explanations: List[str] = Field(default_factory=list)
+
+
+class ReadinessAssessment(BaseModel):
+    """Comprehensive disaster recovery readiness evaluation based on real persisted audits."""
+
+    assessment_id: str = Field(
+        default_factory=lambda: f"RDY-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+    )
+    evaluated_at: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+    score: int = Field(ge=0, le=100, description="Readiness score from 0 to 100")
+    readiness_tier: Literal["OPTIMAL", "ACCEPTABLE", "DEGRADED", "AT_RISK"] = "OPTIMAL"
+    coverage_ratio: float = 0.0
+    tested_snapshots_count: int = 0
+    total_eligible_snapshots: int = 0
+    latest_snapshot_age_hours: Optional[float] = None
+    rto_compliance_rate: float = 0.0
+    average_restore_seconds: float = 0.0
+    unresolved_incidents_count: int = 0
+    successful_drills_count: int = 0
+    failed_drills_count: int = 0
+    metric_limitations: List[str] = Field(default_factory=list)
+

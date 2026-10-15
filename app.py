@@ -41,6 +41,13 @@ from restorelab.reporting.exports import (
     export_incident_markdown,
     export_verification_markdown,
 )
+from restorelab.reporting.html_export import (
+    export_drill_html,
+    export_readiness_html,
+    export_verification_html,
+)
+from restorelab.verification.drills import RecoveryDrillRunner
+from restorelab.verification.drift import SnapshotDriftAnalyzer
 from restorelab.verification.manifest import (
     compare_manifests,
     generate_manifest,
@@ -49,6 +56,7 @@ from restorelab.verification.restore import verify_recovery
 from restorelab.verification.sample_data import generate_lab_dataset
 
 logger = setup_logging()
+
 
 # ==============================================================================
 # Page Configuration & Styling
@@ -198,10 +206,12 @@ def get_app_components():
     exp_runner = ExperimentRunner(settings, diag_engine)
     kb_provider = SQLiteKnowledgeProvider(repo)
     supermemory = SupermemoryAdapter(settings, fallback_provider=kb_provider)
-    return settings, repo, engine, diag_engine, exp_runner, kb_provider, supermemory
+    drill_runner = RecoveryDrillRunner(engine, repo, settings, diag_engine)
+    drift_analyzer = SnapshotDriftAnalyzer(repo, engine, settings)
+    return settings, repo, engine, diag_engine, exp_runner, kb_provider, supermemory, drill_runner, drift_analyzer
 
 
-settings, repo, engine, diag_engine, exp_runner, kb_provider, supermemory = get_app_components()
+settings, repo, engine, diag_engine, exp_runner, kb_provider, supermemory, drill_runner, drift_analyzer = get_app_components()
 
 
 # ==============================================================================
@@ -224,6 +234,7 @@ with st.sidebar:
             "Overview",
             "Backup Lab",
             "Recovery Verification",
+            "Recovery Drills & Readiness",
             "Incident Explorer",
             "Knowledge Base",
             "Experiments",
@@ -232,6 +243,7 @@ with st.sidebar:
         ],
         index=0,
     )
+
     st.markdown("---")
     st.caption("Environment: **Windows / Local-first**")
     st.caption(f"Database: `{settings.resolved_database_path.name}`")
@@ -703,11 +715,141 @@ elif menu == "Recovery Verification":
 
 
 # ==============================================================================
+# Page: RECOVERY DRILLS & READINESS ANALYTICS
+# ==============================================================================
+elif menu == "Recovery Drills & Readiness":
+    st.markdown("## 🎯 Automated Recovery Drills & DR Readiness")
+    st.caption("Measure actual restore durations against RTO SLAs, audit historical recovery drills in isolated sandboxes, and detect snapshot drift.")
+
+    # Section 1: DR Readiness Analytics
+    st.markdown("### 1. Disaster Recovery Readiness Scorecard")
+    readiness = repo.get_recovery_readiness()
+
+    col_r1, col_r2, col_r3, col_r4 = st.columns(4)
+    with col_r1:
+        st.metric("Readiness Score", f"{readiness.score} / 100", f"Tier: {readiness.readiness_tier}")
+    with col_r2:
+        st.metric("Snapshot Coverage", f"{readiness.coverage_ratio:.1f}%", f"{readiness.tested_snapshots_count}/{readiness.total_eligible_snapshots} Tested")
+    with col_r3:
+        st.metric("RTO SLA Compliance", f"{readiness.rto_compliance_rate:.1f}%", f"Avg {readiness.average_restore_seconds:.2f}s")
+    with col_r4:
+        snap_age_str = f"{readiness.latest_snapshot_age_hours:.1f}h" if readiness.latest_snapshot_age_hours is not None else "N/A"
+        st.metric("Latest Snapshot Age (RPO)", snap_age_str, f"{readiness.successful_drills_count} Passes")
+
+    readiness_html = export_readiness_html(readiness)
+    st.download_button(
+        "Download Signed Readiness Audit (.html)",
+        data=readiness_html.content,
+        file_name=f"DR_Readiness_{readiness.assessment_id}.html",
+        mime="text/html",
+    )
+
+    with st.expander("Review Documented Metric Limitations & Assumptions"):
+        for lim in readiness.metric_limitations:
+            st.markdown(f"- {lim}")
+
+    st.markdown("---")
+
+    # Section 2: Automated Recovery Drill Runner
+    st.markdown("### 2. Execute Disaster Recovery Drill")
+    st.caption("Restores snapshot into disposable sandbox, audits SHA-256 byte parity, and checks RTO compliance.")
+
+    col_d1, col_d2, col_d3 = st.columns([2, 1, 1])
+    snapshots = engine.list_snapshots()
+    snap_lookup = {s.id: s for s in snapshots}
+    with col_d1:
+        snap_choices = ["Latest Available Snapshot"] + [f"{s.id} ({s.time[:10]})" for s in snapshots]
+        chosen_snap = st.selectbox("Drill Snapshot Target", snap_choices)
+    with col_d2:
+        drill_rto = st.number_input("RTO Target (seconds)", min_value=5, max_value=600, value=60)
+    with col_d3:
+        auto_clean = st.checkbox("Auto-purge Sandbox", value=True)
+
+    if st.button("Launch Recovery Drill", type="primary", disabled=len(snapshots) == 0):
+        target_sid = None if chosen_snap == "Latest Available Snapshot" else chosen_snap.split()[0]
+        with st.spinner("Executing isolated recovery drill and measuring recovery time..."):
+            try:
+                drill_result = drill_runner.run_drill(
+                    snapshot_id=target_sid,
+                    rto_target_seconds=float(drill_rto),
+                    cleanup_after=auto_clean,
+                )
+                if drill_result.status == "SUCCESS":
+                    st.success(f"DRILL PASSED: Recovered in {drill_result.duration_seconds:.2f}s (RTO Target: {drill_result.rto_target_seconds}s)")
+                else:
+                    st.error(f"DRILL FAILED: {drill_result.evidence_summary}")
+                st.session_state["last_drill_report"] = drill_result
+            except Exception as e:
+                st.error(f"Drill failed: {e}")
+
+    # Drill history
+    past_drills = repo.list_recovery_drills(limit=20)
+    if past_drills:
+        st.markdown("#### Historical Recovery Drills")
+        drill_data = [
+            {
+                "Drill ID": d.drill_id,
+                "Snapshot": d.snapshot_id[:8],
+                "Status": d.status,
+                "Duration (s)": round(d.duration_seconds, 2),
+                "Target RTO (s)": d.rto_target_seconds,
+                "RTO Compliant": "YES" if d.rto_compliant else "NO",
+                "Matched Files": d.matched_files,
+                "Corrupted": d.corrupted_files,
+                "Created At": d.created_at[:19],
+            }
+            for d in past_drills
+        ]
+        st.dataframe(drill_data, use_container_width=True)
+
+    st.markdown("---")
+
+    # Section 3: Snapshot Drift & Volumetric Anomaly Analysis
+    st.markdown("### 3. Snapshot Drift & Volumetric Anomaly Analysis")
+    st.caption("Compare snapshots or inspect current live dataset to detect volumetric swings and explainable forensic anomalies.")
+
+    if len(snapshots) > 0:
+        col_dr1, col_dr2 = st.columns(2)
+        with col_dr1:
+            base_s = st.selectbox("Baseline Snapshot", [s.id for s in snapshots], key="drift_base")
+        with col_dr2:
+            target_options = ["current (Live Source Tree)"] + [s.id for s in snapshots]
+            target_s = st.selectbox("Target Comparison", target_options, key="drift_target")
+
+        if st.button("Run Drift Analysis"):
+            target_key = "current" if target_s.startswith("current") else target_s
+            with st.spinner("Comparing manifests and evaluating volumetric trends..."):
+                try:
+                    drift_rep = drift_analyzer.compare_snapshots(base_s, target_key)
+                    st.session_state["last_drift_rep"] = drift_rep
+                except Exception as e:
+                    st.error(f"Drift analysis error: {e}")
+
+        if "last_drift_rep" in st.session_state:
+            d_rep = st.session_state["last_drift_rep"]
+            st.markdown("#### Drift Findings")
+            c_a, c_m, c_r, c_v = st.columns(4)
+            c_a.metric("Added Files", len(d_rep.added_files))
+            c_m.metric("Modified Files", len(d_rep.modified_files))
+            c_r.metric("Removed Files", len(d_rep.removed_files))
+            c_v.metric("Volumetric Swing", f"{d_rep.percent_size_change}%", f"{d_rep.size_change_bytes / 1024:.1f} KB")
+
+            if d_rep.anomaly_flags:
+                st.warning("Forensic Anomaly Indicators Raised (Deviations from Baseline):")
+                for exp in d_rep.anomaly_explanations:
+                    st.markdown(f"- **{exp}**")
+                st.caption("Note: Flags indicate statistical deviations; they do not represent definitive claims of malware.")
+            else:
+                st.success("No volumetric or modification anomalies detected. Normal operational drift.")
+
+
+# ==============================================================================
 # Page 4: INCIDENT EXPLORER
 # ==============================================================================
 elif menu == "Incident Explorer":
     st.markdown("## 🚨 Incident Explorer & Audit Log")
     st.caption("Investigate backup failures, review deterministic diagnostic findings, and log verified resolutions.")
+
 
     # Status Filters
     c_f1, c_f2 = st.columns([2, 1])

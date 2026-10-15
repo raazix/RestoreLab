@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -29,7 +29,8 @@ from restorelab.backup.base import CommandExecutionResult
 from restorelab.backup.restic import ResticBackupEngine
 from restorelab.config import RestoreLabSettings, get_settings, setup_logging
 from restorelab.diagnostics.engine import DiagnosticEngine
-from restorelab.diagnostics.rules import DiagnosticFinding
+from restorelab.diagnostics.investigation import InvestigationReport, build_investigation_report
+from restorelab.diagnostics.rules import DiagnosticContext, DiagnosticFinding
 from restorelab.experiments.runner import ExperimentResult, ExperimentRunner
 from restorelab.experiments.scenarios import ALL_SCENARIOS, get_scenario_by_id
 from restorelab.incidents.models import (
@@ -39,16 +40,29 @@ from restorelab.incidents.models import (
     IncidentStatus,
     IntegrityCheckRecord,
     KnowledgeArticle,
+    ReadinessAssessment,
+    RecoveryDrillRecord,
     RestoreAttemptRecord,
+    SnapshotDriftReport,
 )
 from restorelab.incidents.repository import IncidentRepository
 from restorelab.knowledge.provider import SearchResult
 from restorelab.knowledge.sqlite_search import SQLiteKnowledgeProvider
 from restorelab.knowledge.supermemory_adapter import SupermemoryAdapter
 from restorelab.reporting.exports import (
+    ExportedReport,
     export_incident_markdown,
     export_verification_markdown,
 )
+from restorelab.reporting.html_export import (
+    export_drill_html,
+    export_drill_json,
+    export_readiness_html,
+    export_readiness_json,
+    export_verification_html,
+)
+from restorelab.verification.drills import RecoveryDrillRunner
+from restorelab.verification.drift import SnapshotDriftAnalyzer
 from restorelab.verification.manifest import (
     Manifest,
     ManifestComparisonResult,
@@ -78,9 +92,16 @@ class AppContext:
         self.supermemory: SupermemoryAdapter = SupermemoryAdapter(
             self.settings, fallback_provider=self.kb_provider
         )
+        self.drill_runner: RecoveryDrillRunner = RecoveryDrillRunner(
+            self.engine, self.repo, self.settings, self.diag_engine
+        )
+        self.drift_analyzer: SnapshotDriftAnalyzer = SnapshotDriftAnalyzer(
+            self.repo, self.engine, self.settings
+        )
 
 
 app_ctx = AppContext()
+
 
 
 @asynccontextmanager
@@ -123,6 +144,20 @@ class IntegrityCheckRequest(BaseModel):
 class RestoreVerifyRequest(BaseModel):
     snapshot_id: str
     subfolder: Optional[str] = None
+
+
+class DrillRunRequest(BaseModel):
+    snapshot_id: Optional[str] = None
+    subfolder: Optional[str] = None
+    rto_target_seconds: float = 60.0
+    drill_type: Literal["manual", "scheduled"] = "manual"
+    cleanup_after: bool = True
+
+
+class DriftCompareRequest(BaseModel):
+    base_snapshot_id: str
+    target_snapshot_id: str
+
 
 
 class IncidentUpdateRequest(BaseModel):
@@ -357,6 +392,60 @@ def verify_snapshot_recovery(req: RestoreVerifyRequest):
 
 
 # ==============================================================================
+# Automated Recovery Drills & Readiness Analytics
+# ==============================================================================
+@app.post("/api/drills/run", response_model=RecoveryDrillRecord)
+def run_recovery_drill(req: DrillRunRequest):
+    """
+    Execute an automated or manual recovery drill into an isolated sandbox.
+    Verifies cryptographic integrity, logs RTO duration, and safely recycles sandbox.
+    """
+    try:
+        drill_record = app_ctx.drill_runner.run_drill(
+            snapshot_id=req.snapshot_id,
+            subfolder=req.subfolder,
+            rto_target_seconds=req.rto_target_seconds,
+            drill_type=req.drill_type,
+            cleanup_after=req.cleanup_after,
+        )
+        return drill_record
+    except Exception as exc:
+        logger.error(f"Recovery drill failed: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/drills", response_model=List[RecoveryDrillRecord])
+def list_recovery_drills(limit: int = Query(50, ge=1, le=500)):
+    """Retrieve historical recovery drill audit log records from SQLite."""
+    return app_ctx.repo.list_recovery_drills(limit=limit)
+
+
+@app.get("/api/readiness", response_model=ReadinessAssessment)
+def get_recovery_readiness():
+    """
+    Compute explainable disaster recovery readiness metrics based on real persisted data.
+    Evaluates drill pass rate, RTO SLA compliance, snapshot age, and coverage.
+    """
+    return app_ctx.repo.get_recovery_readiness()
+
+
+@app.post("/api/drift/compare", response_model=SnapshotDriftReport)
+def compare_snapshot_drift(req: DriftCompareRequest):
+    """
+    Analyze drift, file diffs, and volumetric swings between two snapshots or baseline.
+    Produces explainable forensic anomaly flags without false claims of malware certainty.
+    """
+    try:
+        return app_ctx.drift_analyzer.compare_snapshots(
+            base_snapshot_id=req.base_snapshot_id,
+            target_snapshot_id=req.target_snapshot_id,
+        )
+    except Exception as exc:
+        logger.error(f"Drift comparison failed: {exc}")
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+# ==============================================================================
 # Incident Explorer & Triage
 # ==============================================================================
 @app.get("/api/incidents")
@@ -427,8 +516,27 @@ def sync_incident_to_supermemory(incident_id: str, req: SupermemorySyncRequest):
     }
 
 
+@app.get("/api/incidents/{incident_id}/investigation", response_model=InvestigationReport)
+def get_incident_investigation(incident_id: str):
+    """
+    Perform evidence-based root-cause investigation for an incident.
+    Distinguishes confirmed observations, likely causes, and unknowns,
+    linking conclusions to supporting evidence and non-destructive checks.
+    """
+    incident = app_ctx.repo.get_incident(incident_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    context = DiagnosticContext(
+        raw_evidence=incident.raw_evidence,
+        additional_facts={"operation_type": incident.operation_type},
+    )
+    return build_investigation_report(context, incident.findings)
+
+
 # ==============================================================================
 # Knowledge Base & Search
+
 # ==============================================================================
 @app.get("/api/knowledge/search")
 def search_knowledge(query: str, use_supermemory: bool = False, limit: int = 10):
@@ -483,7 +591,7 @@ def run_experiment_scenario(scenario_id: str):
 
 
 # ==============================================================================
-# Post-Mortems & Verification Reports
+# Post-Mortems & Verification Reports (Markdown, HTML & JSON)
 # ==============================================================================
 @app.get("/api/reports/incident/{incident_id}")
 def export_incident_report(incident_id: str):
@@ -492,13 +600,12 @@ def export_incident_report(incident_id: str):
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
 
-    markdown_text = export_incident_markdown(incident)
-    fingerprint = hashlib.sha256(markdown_text.encode("utf-8")).hexdigest()
+    report_obj = export_incident_markdown(incident)
     return {
         "incident_id": incident.incident_id,
         "title": incident.title,
-        "sha256_fingerprint": fingerprint,
-        "markdown": markdown_text,
+        "sha256_fingerprint": report_obj.sha256_fingerprint,
+        "markdown": report_obj.content,
     }
 
 
@@ -521,15 +628,102 @@ def export_restore_report(attempt_id: str):
         duration_seconds=matched.duration_seconds,
         diagnostics_summary=matched.details,
     )
-    markdown_text = export_verification_markdown(report)
-    fingerprint = hashlib.sha256(markdown_text.encode("utf-8")).hexdigest()
+    report_obj = export_verification_markdown(report)
     return {
         "attempt_id": matched.attempt_id,
         "snapshot_id": matched.snapshot_id,
         "status": matched.status,
-        "sha256_fingerprint": fingerprint,
-        "markdown": markdown_text,
+        "sha256_fingerprint": report_obj.sha256_fingerprint,
+        "markdown": report_obj.content,
     }
+
+
+@app.get("/api/reports/drill/{drill_id}")
+def export_drill_report(drill_id: str):
+    """Retrieve verified HTML and JSON report artifacts for a recovery drill."""
+    drills = app_ctx.repo.list_recovery_drills(limit=200)
+    drill = next((d for d in drills if d.drill_id == drill_id), None)
+    if not drill:
+        raise HTTPException(status_code=404, detail="Recovery drill record not found")
+
+    html_rep = export_drill_html(drill)
+    json_rep = export_drill_json(drill)
+    return {
+        "drill_id": drill.drill_id,
+        "snapshot_id": drill.snapshot_id,
+        "status": drill.status,
+        "sha256_fingerprint": html_rep.sha256_fingerprint,
+        "html": html_rep.content,
+        "json": json_rep.content,
+    }
+
+
+@app.get("/api/reports/readiness")
+def export_readiness_report():
+    """Retrieve verified HTML readiness assessment audit report."""
+    readiness = app_ctx.repo.get_recovery_readiness()
+    html_rep = export_readiness_html(readiness)
+    json_rep = export_readiness_json(readiness)
+    return {
+        "assessment_id": readiness.assessment_id,
+        "score": readiness.score,
+        "tier": readiness.readiness_tier,
+        "sha256_fingerprint": html_rep.sha256_fingerprint,
+        "html": html_rep.content,
+        "json": json_rep.content,
+    }
+
+
+@app.get("/api/reports/download/drill/{drill_id}.html", response_class=HTMLResponse)
+def download_drill_html(drill_id: str):
+    """Download self-contained HTML audit certificate for a recovery drill."""
+    drills = app_ctx.repo.list_recovery_drills(limit=200)
+    drill = next((d for d in drills if d.drill_id == drill_id), None)
+    if not drill:
+        raise HTTPException(status_code=404, detail="Recovery drill record not found")
+    report = export_drill_html(drill)
+    return HTMLResponse(
+        content=report.content,
+        headers={"Content-Disposition": f"inline; filename={drill_id}.html"},
+    )
+
+
+@app.get("/api/reports/download/readiness.html", response_class=HTMLResponse)
+def download_readiness_html():
+    """Download self-contained HTML audit certificate for disaster recovery readiness."""
+    readiness = app_ctx.repo.get_recovery_readiness()
+    report = export_readiness_html(readiness)
+    return HTMLResponse(
+        content=report.content,
+        headers={"Content-Disposition": f"inline; filename=DR-Readiness-{readiness.assessment_id}.html"},
+    )
+
+
+@app.get("/api/reports/download/restore/{attempt_id}.html", response_class=HTMLResponse)
+def download_restore_html(attempt_id: str):
+    """Download self-contained HTML verification certificate for a restore attempt."""
+    attempts = app_ctx.repo.list_restore_attempts(limit=100)
+    matched = next((a for a in attempts if a.attempt_id == attempt_id), None)
+    if not matched:
+        raise HTTPException(status_code=404, detail="Restore attempt not found")
+
+    report = RecoveryVerificationReport(
+        snapshot_id=matched.snapshot_id,
+        timestamp=matched.timestamp,
+        status=matched.status,
+        original_manifest_id=matched.original_manifest_id or "NONE",
+        restored_manifest_id=matched.restored_manifest_id,
+        restore_target_path=matched.target_path,
+        resolved_content_path=matched.target_path,
+        duration_seconds=matched.duration_seconds,
+        diagnostics_summary=matched.details,
+    )
+    html_rep = export_verification_html(report)
+    return HTMLResponse(
+        content=html_rep.content,
+        headers={"Content-Disposition": f"inline; filename=Verification-{attempt_id}.html"},
+    )
+
 
 
 # ==============================================================================

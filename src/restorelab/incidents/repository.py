@@ -20,6 +20,8 @@ from restorelab.incidents.models import (
     IncidentRecord,
     IntegrityCheckRecord,
     KnowledgeArticle,
+    ReadinessAssessment,
+    RecoveryDrillRecord,
     RestoreAttemptRecord,
 )
 from restorelab.verification.manifest import Manifest
@@ -218,6 +220,31 @@ class IncidentRepository:
             except sqlite3.OperationalError as e:
                 logger.warning(f"FTS5 virtual table initialization failed: {e}. Falling back to LIKE.")
                 self._fts5_available = False
+
+            # 9. Recovery Drills Table
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS recovery_drills (
+                    drill_id TEXT PRIMARY KEY,
+                    created_at TEXT NOT NULL,
+                    snapshot_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    drill_type TEXT NOT NULL,
+                    restore_target_path TEXT NOT NULL,
+                    duration_seconds REAL NOT NULL,
+                    rto_target_seconds REAL NOT NULL,
+                    rto_compliant INTEGER NOT NULL,
+                    matched_files INTEGER NOT NULL,
+                    corrupted_files INTEGER NOT NULL,
+                    missing_files INTEGER NOT NULL,
+                    extra_files INTEGER NOT NULL,
+                    evidence_summary TEXT,
+                    sandbox_cleaned INTEGER NOT NULL
+                );
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_drills_created ON recovery_drills(created_at);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_drills_status ON recovery_drills(status);")
 
         self._seed_default_knowledge_base()
 
@@ -504,6 +531,136 @@ class IncidentRepository:
             ]
 
     # -------------------------------------------------------------------------
+    # Recovery Drills & Readiness Analytics
+    # -------------------------------------------------------------------------
+
+    def record_recovery_drill(self, drill: RecoveryDrillRecord) -> None:
+        """Persist a recovery drill audit record."""
+        with self._connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO recovery_drills (
+                    drill_id, created_at, snapshot_id, status, drill_type, restore_target_path,
+                    duration_seconds, rto_target_seconds, rto_compliant, matched_files,
+                    corrupted_files, missing_files, extra_files, evidence_summary, sandbox_cleaned
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                (
+                    drill.drill_id,
+                    drill.created_at,
+                    drill.snapshot_id,
+                    drill.status,
+                    drill.drill_type,
+                    drill.restore_target_path,
+                    drill.duration_seconds,
+                    drill.rto_target_seconds,
+                    1 if drill.rto_compliant else 0,
+                    drill.matched_files,
+                    drill.corrupted_files,
+                    drill.missing_files,
+                    drill.extra_files,
+                    drill.evidence_summary,
+                    1 if drill.sandbox_cleaned else 0,
+                ),
+            )
+
+    def list_recovery_drills(self, limit: int = 50) -> List[RecoveryDrillRecord]:
+        """Fetch list of historical recovery drills."""
+        with self._connection() as conn:
+            cur = conn.execute(
+                "SELECT * FROM recovery_drills ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            )
+            return [
+                RecoveryDrillRecord(
+                    drill_id=r["drill_id"],
+                    created_at=r["created_at"],
+                    snapshot_id=r["snapshot_id"],
+                    status=r["status"],
+                    drill_type=r["drill_type"],
+                    restore_target_path=r["restore_target_path"],
+                    duration_seconds=r["duration_seconds"],
+                    rto_target_seconds=r["rto_target_seconds"],
+                    rto_compliant=bool(r["rto_compliant"]),
+                    matched_files=r["matched_files"],
+                    corrupted_files=r["corrupted_files"],
+                    missing_files=r["missing_files"],
+                    extra_files=r["extra_files"],
+                    evidence_summary=r["evidence_summary"] or "",
+                    sandbox_cleaned=bool(r["sandbox_cleaned"]),
+                )
+                for r in cur.fetchall()
+            ]
+
+    def get_recovery_readiness(self, rto_target_seconds: float = 60.0) -> ReadinessAssessment:
+        """Compute disaster recovery readiness metrics based on real persisted data."""
+        with self._connection() as conn:
+            cur = conn.execute("SELECT DISTINCT snapshot_id FROM backup_runs WHERE snapshot_id IS NOT NULL")
+            eligible_snaps = {r[0] for r in cur.fetchall()}
+            total_eligible = len(eligible_snaps)
+
+            cur_drills = conn.execute("SELECT DISTINCT snapshot_id FROM recovery_drills WHERE status = 'SUCCESS'")
+            tested_from_drills = {r[0] for r in cur_drills.fetchall()}
+            cur_restores = conn.execute("SELECT DISTINCT snapshot_id FROM restore_attempts WHERE status = 'PASSED'")
+            tested_from_restores = {r[0] for r in cur_restores.fetchall()}
+            all_tested = tested_from_drills | tested_from_restores
+            tested_count = len(all_tested & eligible_snaps) if total_eligible > 0 else len(all_tested)
+
+            drills = self.list_recovery_drills(limit=100)
+            restore_attempts = self.list_restore_attempts(limit=100)
+
+            successful_drills = sum(1 for d in drills if d.status == "SUCCESS") + sum(1 for r in restore_attempts if r.status == "PASSED")
+            failed_drills = sum(1 for d in drills if d.status == "FAILED") + sum(1 for r in restore_attempts if r.status == "FAILED")
+            total_evals = len(drills) + len(restore_attempts)
+
+            all_durations = [d.duration_seconds for d in drills] + [r.duration_seconds for r in restore_attempts]
+            avg_duration = sum(all_durations) / len(all_durations) if all_durations else 0.0
+            rto_met = sum(1 for d in all_durations if d <= rto_target_seconds)
+            rto_rate = (rto_met / len(all_durations) * 100.0) if all_durations else 100.0
+
+            coverage = (tested_count / total_eligible * 100.0) if total_eligible > 0 else (100.0 if tested_count > 0 else 0.0)
+
+            cur_inc = conn.execute("SELECT COUNT(*) FROM incidents WHERE status IN ('open', 'investigating')")
+            unresolved = cur_inc.fetchone()[0]
+
+            cur_latest = conn.execute("SELECT timestamp FROM backup_runs ORDER BY timestamp DESC LIMIT 1")
+            latest_row = cur_latest.fetchone()
+            age_hours = None
+            if latest_row and latest_row[0]:
+                try:
+                    dt = datetime.fromisoformat(latest_row[0].replace("Z", "+00:00"))
+                    age_hours = round((datetime.now(timezone.utc) - dt).total_seconds() / 3600.0, 1)
+                except Exception:
+                    pass
+
+            pass_rate = (successful_drills / total_evals * 100.0) if total_evals > 0 else 50.0
+            score = int((pass_rate * 0.35) + (coverage * 0.25) + (rto_rate * 0.20) + (max(0, 100 - (unresolved * 15)) * 0.20))
+            score = max(0, min(100, score))
+
+            tier = "OPTIMAL" if score >= 85 else ("ACCEPTABLE" if score >= 70 else ("DEGRADED" if score >= 50 else "AT_RISK"))
+
+            limitations = [
+                "Drills execute in isolated local sandboxes; network transfer latency for large cloud targets is excluded.",
+                "RTO targets are evaluated against non-concurrent lab workloads.",
+                "Snapshot coverage measures only backups registered with the local repository.",
+            ]
+
+            return ReadinessAssessment(
+                score=score,
+                readiness_tier=tier,
+                coverage_ratio=round(coverage, 1),
+                tested_snapshots_count=tested_count,
+                total_eligible_snapshots=max(total_eligible, tested_count),
+                latest_snapshot_age_hours=age_hours,
+                rto_compliance_rate=round(rto_rate, 1),
+                average_restore_seconds=round(avg_duration, 2),
+                unresolved_incidents_count=unresolved,
+                successful_drills_count=successful_drills,
+                failed_drills_count=failed_drills,
+                metric_limitations=limitations,
+            )
+
+    # -------------------------------------------------------------------------
     # Integrity Check Records
     # -------------------------------------------------------------------------
 
@@ -575,6 +732,23 @@ class IncidentRepository:
             if not row:
                 return None
             return Manifest.model_validate_json(row["manifest_json"])
+
+    def get_manifest_for_snapshot(self, snapshot_id: str) -> Optional[Manifest]:
+        """Lookup original manifest associated with a snapshot from backup runs."""
+        with self._connection() as conn:
+            cur = conn.execute(
+                """
+                SELECT manifest_id FROM backup_runs
+                WHERE snapshot_id = ? OR snapshot_id LIKE ?
+                ORDER BY timestamp DESC LIMIT 1
+                """,
+                (snapshot_id, f"{snapshot_id}%"),
+            )
+            row = cur.fetchone()
+            if row and row["manifest_id"]:
+                return self.get_manifest(row["manifest_id"])
+            return None
+
 
     # -------------------------------------------------------------------------
     # Experiment Records
