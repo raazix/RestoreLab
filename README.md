@@ -121,15 +121,83 @@ Follow this 5-minute walkthrough to demonstrate end-to-end reliability engineeri
 
 ---
 
-## 🏗️ Architecture & Project Structure
+## 🏗️ Architecture & System Design
+
+### System Architecture Diagram
+
+```mermaid
+graph TD
+    subgraph UI ["User Interfaces"]
+        LinearUI["Linear React Workbench (React + TS + Tailwind + Motion)<br/>http://localhost:8000"]
+        StreamlitUI["Classic Streamlit Workbench (Python)<br/>http://localhost:8501"]
+    end
+
+    subgraph API ["API & Routing Layer"]
+        FastAPI["FastAPI REST Backend (src/restorelab/api)<br/>18 Typed Endpoints & Static Serving"]
+    end
+
+    subgraph Core ["RestoreLab Core Reliability Engine (Python 3.11+)"]
+        Config["Config & Secret Scrubber (src/restorelab/config.py)"]
+        ResticEngine["Restic CLI Subprocess Wrapper (src/restorelab/backup/restic.py)"]
+        ManifestEngine["SHA-256 Manifest & Diff Engine (src/restorelab/verification/manifest.py)"]
+        RestoreOrch["Isolated Restore Orchestrator (src/restorelab/verification/restore.py)"]
+        DiagEngine["Deterministic Diagnostic Engine (11 Rules) (src/restorelab/diagnostics/engine.py)"]
+        ExpRunner["Disposable Scratchpad Experiment Runner (src/restorelab/experiments/runner.py)"]
+        Repo["SQLite Persistence & FTS5 CBR Search (src/restorelab/incidents/repository.py)"]
+        Supermemory["Supermemory v5 Adapter (src/restorelab/knowledge/supermemory_adapter.py)"]
+    end
+
+    subgraph Storage ["Storage & External Boundaries"]
+        SourceDir["Lab Source Dataset (./data/lab_source)"]
+        ResticRepo["Encrypted Local Restic Repository (./data/lab_repo)"]
+        RestoreSandbox["Isolated Recovery Sandboxes (./data/lab_restore)"]
+        Scratchpad["Disposable Scratchpads (./data/lab_experiments)"]
+        SQLiteDB[("Authoritative SQLite Database (./data/restorelab.db)")]
+        SupermemoryCloud["Supermemory Cloud Memory API v5<br/>Namespace: restorelab-incidents"]
+    end
+
+    LinearUI -->|HTTP / JSON Requests| FastAPI
+    StreamlitUI -->|Direct Method Invocations| Core
+    FastAPI --> Core
+
+    ResticEngine -->|AES-256-CTR / HMAC-SHA256| ResticRepo
+    ResticEngine -->|Snapshot Restore| RestoreSandbox
+    ManifestEngine -->|Pre-Backup Fingerprint| SourceDir
+    ManifestEngine -->|Post-Restore Fingerprint| RestoreSandbox
+    RestoreOrch --> ManifestEngine
+    RestoreOrch --> ResticEngine
+    RestoreOrch --> DiagEngine
+    ExpRunner --> Scratchpad
+    ExpRunner --> DiagEngine
+
+    DiagEngine --> Repo
+    Repo --> SQLiteDB
+    Supermemory -->|Sanitized Telemetry + Consent| SupermemoryCloud
+    Supermemory -.->|Graceful Fallback| Repo
+```
+
+### Project Directory Structure
 
 ```
 RestoreLab/
-├── app.py                         # Streamlit Reliability Workbench
+├── app.py                         # Classic Streamlit Reliability Workbench
+├── frontend/                      # Linear-Inspired React 18 + TypeScript + Tailwind Application
+│   ├── src/
+│   │   ├── components/            # CommandPalette (Ctrl+K), Sidebar, Header, UI Primitives
+│   │   ├── views/                 # 8 Linear Views (Overview, BackupLab, Recovery, Incidents, etc.)
+│   │   ├── lib/                   # Typed API Client and Utility Helpers
+│   │   └── App.tsx                # Master Linear Layout & Motion View Routing
+│   ├── index.html
+│   ├── package.json
+│   ├── tailwind.config.js
+│   └── vite.config.ts             # Vite build with /api proxy to FastAPI
 ├── src/
 │   └── restorelab/
 │       ├── __init__.py
 │       ├── config.py              # Validated settings, path containment, credential sanitization
+│       ├── api/
+│       │   ├── __init__.py
+│       │   └── main.py            # FastAPI REST backend exposing 18 endpoints & static SPA serving
 │       ├── backup/
 │       │   ├── base.py            # BackupEngine contract & result models
 │       │   └── restic.py          # Safe Restic CLI subprocess wrapper
@@ -154,12 +222,14 @@ RestoreLab/
 │           └── exports.py         # Markdown/JSON post-mortems with SHA-256 fingerprints
 ├── tests/
 │   ├── conftest.py                # Isolated test fixtures
-│   ├── unit/                      # 29 fast unit tests (< 1 sec)
-│   └── integration/               # End-to-end Restic integration tests
+│   ├── unit/                      # 44 fast unit tests (manifests, rules, mocks, API)
+│   │   └── test_api.py            # REST API endpoints & static serving tests
+│   └── integration/               # End-to-end Restic & live Supermemory tests
 ├── scripts/
 │   ├── download_restic.ps1        # Restic binary downloader
 │   ├── setup_lab.ps1              # Full environment setup
-│   ├── run_app.ps1                # App launcher
+│   ├── run_app.ps1                # Streamlit launcher (port 8501)
+│   ├── run_app_linear.ps1         # Linear React launcher (port 8000)
 │   ├── run_tests.ps1              # Automated test runner
 │   └── generate_sample_data.py    # CLI sample data generator
 ├── docs/
@@ -200,10 +270,10 @@ RestoreLab integrates with the official **Supermemory API v5** (`supermemory>=5.
 
 ## 🧪 Automated Testing Suite
 
-RestoreLab includes 39 unit and integration tests using `pytest`:
+RestoreLab includes 47 unit and integration tests using `pytest`:
 
 ```powershell
-# Run the complete test suite (all 39 tests)
+# Run the complete test suite (all 47 tests)
 python -m pytest tests/ -v
 
 # Run fast offline unit tests with mocked API (no keys or network required)
@@ -213,7 +283,8 @@ python -m pytest tests/unit/ -v
 python -m pytest tests/integration/test_supermemory_live.py -v
 ```
 
-All 39 tests pass cleanly:
+All 47 tests pass cleanly:
+- **REST API & Static Serving (8 tests):** Verified status, dashboard metrics, settings masking, experiment scenarios, incident listing, FTS5 queries, and static React HTML serving.
 - **Offline Supermemory Mocks (7 tests):** Verified config loading, client-side regex path/secret redaction, mocked connection check, mocked document ingestion, mocked hybrid retrieval, offline fallback, and API key redaction in error messages.
 - **Live Integration Tests (2 tests):** Verified live connection to `https://api.supermemory.ai` and live ingestion/search roundtrip against namespace `restorelab-incidents`.
 - **Deterministic Manifest Engine (5 tests):** Size limits, Unicode paths, and byte-for-byte SHA-256 verification.
