@@ -1,5 +1,5 @@
 # ==============================================================================
-# RestoreLab — One-Click Environment Setup Script for Windows
+# RestoreLab -- One-Click Environment Setup Script for Windows
 # ==============================================================================
 
 $ErrorActionPreference = "Stop"

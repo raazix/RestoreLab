@@ -1,5 +1,5 @@
 # ==============================================================================
-# RestoreLab — Application Launch Script for Windows
+# RestoreLab -- Application Launch Script for Windows
 # ==============================================================================
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot

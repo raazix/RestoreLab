@@ -1,10 +1,10 @@
 # ==============================================================================
-# RestoreLab — Run Linear-Inspired React Application
+# RestoreLab -- Run Linear-Inspired React Application
 # Launches FastAPI backend serving the pre-built React workbench on http://localhost:8000
 # ==============================================================================
 
 Write-Host "=================================================================" -ForegroundColor Cyan
-Write-Host " 🛡️ Launching RestoreLab — Linear Reliability Workbench" -ForegroundColor Cyan
+Write-Host "  Launching RestoreLab -- Linear Reliability Workbench" -ForegroundColor Cyan
 Write-Host "=================================================================" -ForegroundColor Cyan
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -20,6 +20,7 @@ if (-not (Test-Path "$ProjectRoot\frontend\dist\index.html")) {
 }
 
 Write-Host "[*] Starting Uvicorn API server on http://localhost:8000" -ForegroundColor Green
+Write-Host "[*] Open http://localhost:8000 in your browser." -ForegroundColor Green
 Write-Host "[*] Press Ctrl+C to terminate." -ForegroundColor DarkGray
 
 Start-Process "http://localhost:8000"

@@ -1,5 +1,5 @@
 # ==============================================================================
-# RestoreLab — Restic Binary Downloader for Windows
+# RestoreLab -- Restic Binary Downloader for Windows
 # ==============================================================================
 
 $ErrorActionPreference = "Stop"

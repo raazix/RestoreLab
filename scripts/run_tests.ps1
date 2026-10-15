@@ -1,5 +1,5 @@
 # ==============================================================================
-# RestoreLab — Test Suite Runner for Windows
+# RestoreLab -- Test Suite Runner for Windows
 # ==============================================================================
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
