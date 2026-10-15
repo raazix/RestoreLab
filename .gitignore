@@ -1,0 +1,45 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Environments
+.env
+.venv/
+env/
+venv/
+ENV/
+
+# RestoreLab Lab Repositories and Data (Preserves safety, isolates disposable lab data)
+data/*
+!data/.gitkeep
+!data/seeds/
+data/restorelab.db*
+logs/
+*.log
+
+# Temp restore and experiment outputs
+lab_repo/
+lab_source/
+lab_restore/
+lab_experiments/
+temp/
+tmp/
+
+# Downloaded Binaries
+bin/*
+!bin/.gitkeep
+!bin/README.md
+
+# OS Artifacts
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
